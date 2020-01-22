@@ -1,0 +1,12 @@
+rtos\mpu6050.o: ..\Src\MPU6050.c
+rtos\mpu6050.o: ../Inc/MPU6050.h
+rtos\mpu6050.o: ../Inc/HAL_MPU6050.h
+rtos\mpu6050.o: D:\Installation\keilpack\Keil\STM32F1xx_DFP\2.3.0\Device\Include\stm32f10x.h
+rtos\mpu6050.o: .\RTE\_RTOS\RTE_Components.h
+rtos\mpu6050.o: ../Drivers/CMSIS/Include/core_cm3.h
+rtos\mpu6050.o: D:\Installation\ARM\ARMCC\Bin\..\include\stdint.h
+rtos\mpu6050.o: ../Drivers/CMSIS/Include/cmsis_version.h
+rtos\mpu6050.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
+rtos\mpu6050.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
+rtos\mpu6050.o: D:\Installation\keilpack\Keil\STM32F1xx_DFP\2.3.0\Device\Include\system_stm32f10x.h
+rtos\mpu6050.o: D:\Installation\ARM\ARMCC\Bin\..\include\stdbool.h
