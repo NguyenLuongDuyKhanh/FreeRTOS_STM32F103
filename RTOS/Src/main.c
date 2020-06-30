@@ -37,6 +37,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define BIT_0	( 1 << 0 )
+#define BIT_4	( 1 << 4 )
+
+#define NOTI		 						(uint8_t *)"ChuoiDungDef\n", 13
+#define NOTI_taskDefault		(uint8_t *)"TaskDefault\n", 12
+#define NOTI_taskPWM				(uint8_t *)"TaskPWM\n", 8
+#define NOTI_taskReadMPU		(uint8_t *)"TaskReadMPU\n", 12
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -52,18 +59,21 @@ TIM_HandleTypeDef htim3;
 UART_HandleTypeDef huart1;
 
 osThreadId defaultTaskHandle;
-osThreadId myTask02Handle;
-osThreadId myTask03Handle;
+osThreadId taskReadMPUHandle;
+osThreadId taskPWMHandle;
+osMessageQId queueResultHandle;
+osSemaphoreId myBinarySem01Handle;
+osSemaphoreId myCountingSem01Handle;
 /* USER CODE BEGIN PV */
+EventGroupHandle_t commonEventGroup;
+
 SD_MPU6050 mpu1;
 SD_MPU6050_Result result ;
-
 extern char ReceivedData[100];
 extern uint8_t Rxcount;
 extern uint32_t dataSize;
 extern uint8_t check;
 extern uint32_t time;
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -127,6 +137,15 @@ int main(void)
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
+  /* Create the semaphores(s) */
+  /* definition and creation of myBinarySem01 */
+  osSemaphoreDef(myBinarySem01);
+  myBinarySem01Handle = osSemaphoreCreate(osSemaphore(myBinarySem01), 1);
+
+  /* definition and creation of myCountingSem01 */
+  osSemaphoreDef(myCountingSem01);
+  myCountingSem01Handle = osSemaphoreCreate(osSemaphore(myCountingSem01), 2);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
@@ -135,8 +154,15 @@ int main(void)
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* definition and creation of queueResult */
+  osMessageQDef(queueResult, 16, uint16_t);
+  queueResultHandle = osMessageCreate(osMessageQ(queueResult), NULL);
+
   /* USER CODE BEGIN RTOS_QUEUES */
-  /* add queues, ... */
+  /* add queues, ... */	
+	commonEventGroup = xEventGroupCreate();
+
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -144,13 +170,13 @@ int main(void)
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of myTask02 */
-  osThreadDef(myTask02, StartTask02, osPriorityIdle, 0, 128);
-  myTask02Handle = osThreadCreate(osThread(myTask02), NULL);
+  /* definition and creation of taskReadMPU */
+  osThreadDef(taskReadMPU, StartTask02, osPriorityIdle, 0, 128);
+  taskReadMPUHandle = osThreadCreate(osThread(taskReadMPU), NULL);
 
-  /* definition and creation of myTask03 */
-  osThreadDef(myTask03, StartTask03, osPriorityIdle, 0, 128);
-  myTask03Handle = osThreadCreate(osThread(myTask03), NULL);
+  /* definition and creation of taskPWM */
+  osThreadDef(taskPWM, StartTask03, osPriorityIdle, 0, 128);
+  taskPWMHandle = osThreadCreate(osThread(taskPWM), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -377,7 +403,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PC15 */
   GPIO_InitStruct.Pin = GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PA0 PA1 PA2 PA3 
@@ -391,11 +417,17 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : PB2 PB10 PB11 PB12 
                            PB13 PB14 PB15 PB3 
-                           PB4 PB5 PB8 */
+                           PB5 PB8 */
   GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12 
                           |GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15|GPIO_PIN_3 
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_8;
+                          |GPIO_PIN_5|GPIO_PIN_8;
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PB4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PB9 */
@@ -422,11 +454,29 @@ void StartDefaultTask(void const * argument)
 {
   /* init code for USB_DEVICE */
   MX_USB_DEVICE_Init();
+	MPU6050_I2C_CLOCK();
   /* USER CODE BEGIN 5 */
-  /* Infinite loop */
+	CDC_Transmit_FS(NOTI_taskDefault);
+	    if( commonEventGroup == NULL )
+    {
+        HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,0);
+    }else
+		{
+				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,1);
+		}
+			/* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+		if(check == 1) //neu co du lieu den thi truyen di du lieu vua nhan duoc
+		{
+			CDC_Transmit_FS((uint8_t *)ReceivedData, strlen(ReceivedData));
+			for(int i = 0; i < dataSize; i++)
+			{
+				ReceivedData[i] = 0;
+			}                                                                                                                                                                                                    
+			check = 0;
+		}
+    osDelay(30);
   }
   /* USER CODE END 5 */ 
 }
@@ -441,61 +491,50 @@ void StartDefaultTask(void const * argument)
 void StartTask02(void const * argument)
 {
   /* USER CODE BEGIN StartTask02 */
+	CDC_Transmit_FS(NOTI_taskReadMPU);
+	
   /* Infinite loop */
 	result = SD_MPU6050_Init(&hi2c1,&mpu1,SD_MPU6050_Device_0,SD_MPU6050_Accelerometer_2G,SD_MPU6050_Gyroscope_250s );
 	HAL_Delay(500);
-
-  for(;;)
+  for(;;)	
   {	
-				if(check == 1) //neu co du lieu den thi truyen di du lieu vua nhan duoc
-		{
-			CDC_Transmit_FS((uint8_t *)ReceivedData, strlen(ReceivedData));
-			for(int i = 0; i < dataSize; i++)
-			{
-				ReceivedData[i] = 0;
-			}
-			check = 0;
+	  if(result == SD_MPU6050_Result_Ok)
+	  {
+			HAL_UART_Transmit(&huart1, (uint8_t*)"OK\n", 3,10);
 		}
+	  else
+	  {
+		  //
+	  }
+		SD_MPU6050_ReadTemperature(&hi2c1,&mpu1);
+	  float temper = mpu1.Temperature;
 		
-		//CDC_Receive_FS(buf,len);
+	  SD_MPU6050_ReadGyroscope(&hi2c1,&mpu1);
+	  int16_t g_x = mpu1.Gyroscope_X;
+	  int16_t g_y = mpu1.Gyroscope_Y;
+	  int16_t g_z = mpu1.Gyroscope_Z;			
 		
-//	  if(result == SD_MPU6050_Result_Ok)
-//	  {
-//			HAL_UART_Transmit(&huart1, (uint8_t*)"OK\n", 3,10);
-//		}
-//	  else
-//	  {
-//		  //
-//	  }
-//		SD_MPU6050_ReadTemperature(&hi2c1,&mpu1);
-//	  float temper = mpu1.Temperature;
-//		
-//	  SD_MPU6050_ReadGyroscope(&hi2c1,&mpu1);
-//	  int16_t g_x = mpu1.Gyroscope_X;
-//	  int16_t g_y = mpu1.Gyroscope_Y;
-//	  int16_t g_z = mpu1.Gyroscope_Z;			
-//		
-//	  SD_MPU6050_ReadAccelerometer(&hi2c1,&mpu1);
-//	  int16_t a_x = mpu1.Accelerometer_X;
-//	  int16_t a_y = mpu1.Accelerometer_Y;
-//	  int16_t a_z = mpu1.Accelerometer_Z;
-//				if(g_x > 0)
-//			{
-//				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,1);
-//				HAL_GPIO_WritePin(GPIOB,GPIO_PIN_9,0);
-//			}
-//			else if (g_x < 0)
-//			{
-//				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,0);
-//				HAL_GPIO_WritePin(GPIOB,GPIO_PIN_9,1);
-//			}else
-//			{
-//								HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,1);
-//				HAL_GPIO_WritePin(GPIOB,GPIO_PIN_9,1);
-//			}
-			
+	  SD_MPU6050_ReadAccelerometer(&hi2c1,&mpu1);
+	  int16_t a_x = mpu1.Accelerometer_X;
+	  int16_t a_y = mpu1.Accelerometer_Y;
+	  int16_t a_z = mpu1.Accelerometer_Z;
+				if(a_x > 0)
+			{
+				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,1);
+				HAL_GPIO_WritePin(GPIOB,GPIO_PIN_9,0);
+			}
+			else if (a_x < 0)
+			{
+				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,0);
+				HAL_GPIO_WritePin(GPIOB,GPIO_PIN_9,1);
+			}else
+			{
+				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_14,1);
+				HAL_GPIO_WritePin(GPIOB,GPIO_PIN_9,1);
+			}			
+		osDelay(2);
   }
-	osDelay(1);
+	
   /* USER CODE END StartTask02 */
 }
 
@@ -509,19 +548,18 @@ void StartTask02(void const * argument)
 void StartTask03(void const * argument)
 {
   /* USER CODE BEGIN StartTask03 */
-		uint8_t data[] = "TASK3";
 
   /* Infinite loop */	
   for(;;)
-  {
+  {;
+		//CDC_Transmit_FS((uint8_t *)message_event.value.v,1);
 		for(int pwm = 0;pwm<1000;pwm++)
 		{
 			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3,pwm);
 			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_4,1000-pwm);
-			HAL_Delay(10);
+			osDelay(20);
 		}
-				CDC_Transmit_FS(data,5);
-    osDelay(1);
+    osDelay(2);
   }
   /* USER CODE END StartTask03 */
 }
